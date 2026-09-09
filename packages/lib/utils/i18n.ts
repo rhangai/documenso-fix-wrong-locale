@@ -21,6 +21,10 @@ export async function dynamicActivate(locale: string) {
 }
 
 const parseLanguageFromLocale = (locale: string): SupportedLanguageCodes | null => {
+  if (APP_I18N_OPTIONS.supportedLangs.includes(locale)) {
+    return locale as SupportedLanguageCodes;
+  }
+
   const [language, _country] = locale.split('-');
 
   const foundSupportedLanguage = APP_I18N_OPTIONS.supportedLangs.find(
@@ -34,13 +38,31 @@ const parseLanguageFromLocale = (locale: string): SupportedLanguageCodes | null 
   return foundSupportedLanguage;
 };
 
+// Parse the accept-language header, allowing something like "da, en-gb;q=0.8, en;q=0.7"
+const parseAcceptLanguage = (acceptLanguage: string): string[] => {
+  type HeaderLang = { lang: string; quality: number };
+  const headerLangs: HeaderLang[] = acceptLanguage.split(';').map((l): HeaderLang => {
+    const [lang, qPart] = l.trim().split(';', 2);
+    let quality = 1;
+    if (qPart?.startsWith('q=')) {
+      const qualityParsed = parseFloat(qPart.substring(2));
+      if (Number.isFinite(qualityParsed)) {
+        quality = qualityParsed;
+      }
+    }
+    return { lang: lang ?? '', quality };
+  });
+  headerLangs.sort((a, b) => b.quality - a.quality);
+  return headerLangs.map((i) => i.lang);
+};
+
 /**
  * Extracts the language from the `accept-language` header.
  */
 export const extractLocaleDataFromHeaders = (
   headers: Headers,
 ): { lang: SupportedLanguageCodes | null; locales: string[] } => {
-  const headerLocales = (headers.get('accept-language') ?? '').split(',');
+  const headerLocales = parseAcceptLanguage(headers.get('accept-language') ?? '');
 
   const language = parseLanguageFromLocale(headerLocales[0]);
 
@@ -60,7 +82,7 @@ type ExtractLocaleDataOptions = {
  * Will return the default fallback language if not found.
  */
 export const extractLocaleData = ({ headers }: ExtractLocaleDataOptions): I18nLocaleData => {
-  const headerLocales = (headers.get('accept-language') ?? '').split(',');
+  const headerLocales = parseAcceptLanguage(headers.get('accept-language') ?? '');
 
   const unknownLanguages = headerLocales
     .map((locale) => parseLanguageFromLocale(locale))
